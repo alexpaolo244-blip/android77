@@ -1,23 +1,17 @@
 package com.shofyou.app;
 
 import android.annotation.SuppressLint;
-import android.app.AlertDialog;
-import android.content.res.Configuration;
-import android.graphics.Color;
-import android.net.Uri;
-import android.os.Build;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.view.View;
-import android.webkit.CookieManager;
-import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.ImageView;
+import android.webkit.ValueCallback;
+import android.content.Intent;
+import android.net.Uri;
+import android.provider.MediaStore;
 
-import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
@@ -25,155 +19,142 @@ public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
     private SwipeRefreshLayout swipe;
-    private ValueCallback<Uri[]> fileCallback;
 
-    private final String HOME_URL = "https://shofyou.com";
+    private String HOME_URL = "https://shofyou.com/";
+
+    private ValueCallback<Uri[]> filePathCallback;
+    private final static int FILE_CHOOSER_RESULT_CODE = 1;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        getWindow().setStatusBarColor(Color.TRANSPARENT);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-
-            int nightModeFlags =
-                    getResources().getConfiguration().uiMode
-                            & Configuration.UI_MODE_NIGHT_MASK;
-
-            if (nightModeFlags != Configuration.UI_MODE_NIGHT_YES) {
-
-                getWindow().getDecorView().setSystemUiVisibility(
-                        View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-            }
-        }
-
-        webView = findViewById(R.id.webview);
         swipe = findViewById(R.id.swipe);
-        ImageView splashLogo = findViewById(R.id.splashLogo);
+        webView = findViewById(R.id.webview);
 
-        WebSettings ws = webView.getSettings();
+        swipe.setOnRefreshListener(() -> webView.reload());
 
-        ws.setJavaScriptEnabled(true);
-        ws.setDomStorageEnabled(true);
-        ws.setAllowFileAccess(true);
-        ws.setMediaPlaybackRequiresUserGesture(false);
-
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
-
-        webView.setWebViewClient(new WebViewClient() {
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                splashLogo.setVisibility(View.GONE);
-                swipe.setRefreshing(false);
-            }
-
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view,
-                                                    WebResourceRequest request) {
-
-                String url = request.getUrl().toString();
-
-                if (url.contains("shofyou.com")) {
-                    view.loadUrl(url);
-                    return true;
-                }
-
-                startActivity(
-                        new android.content.Intent(MainActivity.this,
-                                PopupActivity.class)
-                                .putExtra("url", url)
-                );
-
-                return true;
-            }
-        });
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setDomStorageEnabled(true);
+        webView.getSettings().setAllowFileAccess(true);
+        webView.getSettings().setAllowContentAccess(true);
+        webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+        webView.getSettings().setUseWideViewPort(true);
+        webView.getSettings().setLoadWithOverviewMode(true);
 
         webView.setWebChromeClient(new WebChromeClient() {
 
             @Override
             public boolean onShowFileChooser(WebView webView,
-                                             ValueCallback<Uri[]> callback,
-                                             FileChooserParams params) {
+                                             ValueCallback<Uri[]> filePathCallback,
+                                             FileChooserParams fileChooserParams) {
 
-                fileCallback = callback;
+                MainActivity.this.filePathCallback = filePathCallback;
 
-                android.content.Intent intent =
-                        new android.content.Intent(
-                                android.content.Intent.ACTION_PICK,
-                                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+                Intent intent = new Intent(Intent.ACTION_PICK,
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
 
-                intent.setType("*/*");
-                intent.putExtra(android.content.Intent.EXTRA_MIME_TYPES,
-                        new String[]{"image/*", "video/*"});
-                intent.putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, true);
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                intent.setType("image/* video/*");
 
-                startActivityForResult(intent, 100);
+                startActivityForResult(intent, FILE_CHOOSER_RESULT_CODE);
 
                 return true;
             }
         });
 
-        swipe.setOnRefreshListener(() -> {
+        webView.setWebViewClient(new WebViewClient() {
 
-            String current = webView.getUrl();
-
-            if (current != null && current.contains("/reels/")) {
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
 
                 swipe.setRefreshing(false);
 
-            } else {
+                // منع التحديث بالسحب في صفحة reels
+                if (url.contains("/reels/")) {
+                    swipe.setEnabled(false);
+                } else {
+                    swipe.setEnabled(true);
+                }
 
-                webView.reload();
+                super.onPageStarted(view, url, favicon);
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+
+                if (url.startsWith("https://shofyou.com")) {
+                    view.loadUrl(url);
+                    return true;
+                }
+
+                // فتح الروابط الخارجية في PopupActivity
+                Intent intent = new Intent(MainActivity.this, PopupActivity.class);
+                intent.putExtra("url", url);
+                startActivity(intent);
+                return true;
             }
         });
 
-        webView.loadUrl(HOME_URL);
-
-        handleBack();
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState);
+        } else {
+            webView.loadUrl(HOME_URL);
+        }
     }
 
     @Override
-    protected void onActivityResult(int requestCode,
-                                    int resultCode,
-                                    android.content.Intent data) {
+    public void onBackPressed() {
 
-        if (fileCallback == null) return;
+        if (webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            finish();
+        }
+    }
 
-        Uri[] result = null;
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        webView.saveState(outState);
+        super.onSaveInstanceState(outState);
+    }
 
-        if (resultCode == RESULT_OK && data != null) {
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
 
-            result = new Uri[]{data.getData()};
+        if (requestCode == FILE_CHOOSER_RESULT_CODE) {
+
+            if (filePathCallback == null) return;
+
+            Uri[] results = null;
+
+            if (resultCode == RESULT_OK) {
+
+                if (intent != null) {
+
+                    if (intent.getClipData() != null) {
+
+                        int count = intent.getClipData().getItemCount();
+                        results = new Uri[count];
+
+                        for (int i = 0; i < count; i++) {
+                            results[i] = intent.getClipData().getItemAt(i).getUri();
+                        }
+
+                    } else if (intent.getData() != null) {
+
+                        results = new Uri[]{intent.getData()};
+                    }
+                }
+            }
+
+            filePathCallback.onReceiveValue(results);
+            filePathCallback = null;
         }
 
-        fileCallback.onReceiveValue(result);
-        fileCallback = null;
+        super.onActivityResult(requestCode, resultCode, intent);
     }
 
-    private void handleBack() {
-
-        getOnBackPressedDispatcher().addCallback(this,
-                new OnBackPressedCallback(true) {
-
-                    @Override
-                    public void handleOnBackPressed() {
-
-                        if (webView.canGoBack())
-                            webView.goBack();
-                        else
-                            new AlertDialog.Builder(MainActivity.this)
-                                    .setMessage("Exit app?")
-                                    .setPositiveButton("Yes",
-                                            (d, i) -> finish())
-                                    .setNegativeButton("No", null)
-                                    .show();
-                    }
-                });
-    }
 }
