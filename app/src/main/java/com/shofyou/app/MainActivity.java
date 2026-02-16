@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.ValueCallback;
@@ -20,7 +21,7 @@ public class MainActivity extends AppCompatActivity {
     private WebView webView;
     private SwipeRefreshLayout swipe;
 
-    private String HOME_URL = "https://shofyou.com/";
+    private static final String HOME_URL = "https://shofyou.com/";
 
     private ValueCallback<Uri[]> filePathCallback;
     private final static int FILE_CHOOSER_RESULT_CODE = 1;
@@ -28,21 +29,57 @@ public class MainActivity extends AppCompatActivity {
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+
+        // إزالة Splash فور بدء MainActivity
+        setTheme(R.style.AppTheme);
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         swipe = findViewById(R.id.swipe);
         webView = findViewById(R.id.webview);
 
-        swipe.setOnRefreshListener(() -> webView.reload());
+        initWebView();
 
-        webView.getSettings().setJavaScriptEnabled(true);
-        webView.getSettings().setDomStorageEnabled(true);
-        webView.getSettings().setAllowFileAccess(true);
-        webView.getSettings().setAllowContentAccess(true);
-        webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
-        webView.getSettings().setUseWideViewPort(true);
-        webView.getSettings().setLoadWithOverviewMode(true);
+        swipe.setOnRefreshListener(() -> {
+
+            if (!webView.getUrl().contains("/reels/")) {
+                webView.reload();
+            } else {
+                swipe.setRefreshing(false);
+            }
+
+        });
+
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState);
+        } else {
+            webView.loadUrl(HOME_URL);
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void initWebView() {
+
+        WebSettings settings = webView.getSettings();
+
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
+
+        // تحسين السرعة
+        settings.setRenderPriority(WebSettings.RenderPriority.HIGH);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setLoadsImagesAutomatically(true);
+
+        // تحسين الأداء
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
+
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
         webView.setWebChromeClient(new WebChromeClient() {
 
@@ -72,7 +109,6 @@ public class MainActivity extends AppCompatActivity {
 
                 swipe.setRefreshing(false);
 
-                // منع التحديث بالسحب في صفحة reels
                 if (url.contains("/reels/")) {
                     swipe.setEnabled(false);
                 } else {
@@ -83,40 +119,49 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onPageFinished(WebView view, String url) {
+
+                swipe.setRefreshing(false);
+
+                super.onPageFinished(view, url);
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
 
                 if (url.startsWith("https://shofyou.com")) {
+
                     view.loadUrl(url);
                     return true;
-                }
 
-                // فتح الروابط الخارجية في PopupActivity
-                Intent intent = new Intent(MainActivity.this, PopupActivity.class);
-                intent.putExtra("url", url);
-                startActivity(intent);
-                return true;
+                } else {
+
+                    Intent intent = new Intent(MainActivity.this, PopupActivity.class);
+                    intent.putExtra("url", url);
+                    startActivity(intent);
+
+                    return true;
+                }
             }
         });
-
-        if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState);
-        } else {
-            webView.loadUrl(HOME_URL);
-        }
     }
 
     @Override
     public void onBackPressed() {
 
         if (webView.canGoBack()) {
+
             webView.goBack();
+
         } else {
+
             finish();
         }
     }
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
+
         webView.saveState(outState);
         super.onSaveInstanceState(outState);
     }
@@ -130,23 +175,21 @@ public class MainActivity extends AppCompatActivity {
 
             Uri[] results = null;
 
-            if (resultCode == RESULT_OK) {
+            if (resultCode == RESULT_OK && intent != null) {
 
-                if (intent != null) {
+                if (intent.getClipData() != null) {
 
-                    if (intent.getClipData() != null) {
+                    int count = intent.getClipData().getItemCount();
+                    results = new Uri[count];
 
-                        int count = intent.getClipData().getItemCount();
-                        results = new Uri[count];
+                    for (int i = 0; i < count; i++) {
 
-                        for (int i = 0; i < count; i++) {
-                            results[i] = intent.getClipData().getItemAt(i).getUri();
-                        }
-
-                    } else if (intent.getData() != null) {
-
-                        results = new Uri[]{intent.getData()};
+                        results[i] = intent.getClipData().getItemAt(i).getUri();
                     }
+
+                } else if (intent.getData() != null) {
+
+                    results = new Uri[]{intent.getData()};
                 }
             }
 
@@ -156,5 +199,4 @@ public class MainActivity extends AppCompatActivity {
 
         super.onActivityResult(requestCode, resultCode, intent);
     }
-
 }
