@@ -2,7 +2,6 @@ package com.shofyou.app;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
-import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
@@ -16,13 +15,16 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.ImageView;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
+    private SwipeRefreshLayout swipe;
     private ValueCallback<Uri[]> fileCallback;
 
     private final String HOME_URL = "https://shofyou.com";
@@ -32,107 +34,114 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
 
         super.onCreate(savedInstanceState);
-
         setContentView(R.layout.activity_main);
 
-        // جعل الخلفية شفافة
         getWindow().setStatusBarColor(Color.TRANSPARENT);
 
-        // تغيير لون الايقونات حسب وضع الهاتف (نهار / ليل)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
 
             int nightModeFlags =
                     getResources().getConfiguration().uiMode
                             & Configuration.UI_MODE_NIGHT_MASK;
 
-            if (nightModeFlags == Configuration.UI_MODE_NIGHT_YES) {
+            if (nightModeFlags != Configuration.UI_MODE_NIGHT_YES) {
 
-                // الوضع الليلي → ايقونات بيضاء
-                getWindow().getDecorView().setSystemUiVisibility(0);
-
-            } else {
-
-                // الوضع النهاري → ايقونات سوداء
                 getWindow().getDecorView().setSystemUiVisibility(
                         View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
             }
         }
 
         webView = findViewById(R.id.webview);
+        swipe = findViewById(R.id.swipe);
+        ImageView splashLogo = findViewById(R.id.splashLogo);
 
         WebSettings ws = webView.getSettings();
 
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);
         ws.setAllowFileAccess(true);
-        ws.setAllowContentAccess(true);
-        ws.setUseWideViewPort(true);
-        ws.setLoadWithOverviewMode(true);
         ws.setMediaPlaybackRequiresUserGesture(false);
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
-        webView.setWebViewClient(new Browser());
-        webView.setWebChromeClient(new Chrome());
+        webView.setWebViewClient(new WebViewClient() {
 
-        if (savedInstanceState != null)
-            webView.restoreState(savedInstanceState);
-        else
-            webView.loadUrl(HOME_URL);
-
-        handleBack();
-    }
-
-    private class Browser extends WebViewClient {
-
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view,
-                                                WebResourceRequest request) {
-
-            String url = request.getUrl().toString();
-
-            if (url.contains("shofyou.com")) {
-
-                view.loadUrl(url);
-                return true;
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                splashLogo.setVisibility(View.GONE);
+                swipe.setRefreshing(false);
             }
 
-            Intent intent =
-                    new Intent(MainActivity.this,
-                            PopupActivity.class);
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view,
+                                                    WebResourceRequest request) {
 
-            intent.putExtra("url", url);
+                String url = request.getUrl().toString();
 
-            startActivity(intent);
+                if (url.contains("shofyou.com")) {
+                    view.loadUrl(url);
+                    return true;
+                }
 
-            return true;
-        }
-    }
+                startActivity(
+                        new android.content.Intent(MainActivity.this,
+                                PopupActivity.class)
+                                .putExtra("url", url)
+                );
 
-    private class Chrome extends WebChromeClient {
+                return true;
+            }
+        });
 
-        @Override
-        public boolean onShowFileChooser(WebView webView,
-                                         ValueCallback<Uri[]> callback,
-                                         FileChooserParams params) {
+        webView.setWebChromeClient(new WebChromeClient() {
 
-            fileCallback = callback;
+            @Override
+            public boolean onShowFileChooser(WebView webView,
+                                             ValueCallback<Uri[]> callback,
+                                             FileChooserParams params) {
 
-            Intent intent = new Intent(Intent.ACTION_PICK);
-            intent.setType("image/* video/*");
-            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                fileCallback = callback;
 
-            startActivityForResult(intent, 100);
+                android.content.Intent intent =
+                        new android.content.Intent(
+                                android.content.Intent.ACTION_PICK,
+                                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
 
-            return true;
-        }
+                intent.setType("*/*");
+                intent.putExtra(android.content.Intent.EXTRA_MIME_TYPES,
+                        new String[]{"image/*", "video/*"});
+                intent.putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, true);
+
+                startActivityForResult(intent, 100);
+
+                return true;
+            }
+        });
+
+        swipe.setOnRefreshListener(() -> {
+
+            String current = webView.getUrl();
+
+            if (current != null && current.contains("/reels/")) {
+
+                swipe.setRefreshing(false);
+
+            } else {
+
+                webView.reload();
+            }
+        });
+
+        webView.loadUrl(HOME_URL);
+
+        handleBack();
     }
 
     @Override
     protected void onActivityResult(int requestCode,
                                     int resultCode,
-                                    Intent data) {
+                                    android.content.Intent data) {
 
         if (fileCallback == null) return;
 
@@ -144,53 +153,27 @@ public class MainActivity extends AppCompatActivity {
         }
 
         fileCallback.onReceiveValue(result);
-
         fileCallback = null;
     }
 
     private void handleBack() {
 
-        getOnBackPressedDispatcher()
-                .addCallback(this,
-                        new OnBackPressedCallback(true) {
+        getOnBackPressedDispatcher().addCallback(this,
+                new OnBackPressedCallback(true) {
 
-            @Override
-            public void handleOnBackPressed() {
+                    @Override
+                    public void handleOnBackPressed() {
 
-                if (webView.canGoBack())
-                    webView.goBack();
-
-                else {
-
-                    new AlertDialog.Builder(MainActivity.this)
-                            .setMessage("Exit app?")
-                            .setPositiveButton("Yes",
-                                    (d, i) -> finish())
-                            .setNegativeButton("No", null)
-                            .show();
-                }
-            }
-        });
-    }
-
-    @Override
-    protected void onSaveInstanceState(Bundle outState) {
-
-        webView.saveState(outState);
-        super.onSaveInstanceState(outState);
-    }
-
-    @Override
-    protected void onPause() {
-
-        webView.onPause();
-        super.onPause();
-    }
-
-    @Override
-    protected void onResume() {
-
-        webView.onResume();
-        super.onResume();
+                        if (webView.canGoBack())
+                            webView.goBack();
+                        else
+                            new AlertDialog.Builder(MainActivity.this)
+                                    .setMessage("Exit app?")
+                                    .setPositiveButton("Yes",
+                                            (d, i) -> finish())
+                                    .setNegativeButton("No", null)
+                                    .show();
+                    }
+                });
     }
 }
